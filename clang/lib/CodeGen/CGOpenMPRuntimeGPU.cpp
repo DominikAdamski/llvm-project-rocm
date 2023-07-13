@@ -1218,36 +1218,78 @@ void CGOpenMPRuntimeGPU::emitParallelCall(CodeGenFunction &CGF,
   auto &&ParallelGen = [this, Loc, OutlinedFn, CapturedVars, IfCond,
                         NumThreads](CodeGenFunction &CGF,
                                     PrePostActionTy &Action) {
+    ASTContext &Ctx = CGF.getContext();
+    TBAAAccessInfo TBAAInfo = CGM.getTBAAAccessInfo(Ctx.VoidPtrTy);
+    llvm::MDNode *Tag = CGM.getTBAAAccessTagInfo(TBAAInfo);
+    llvm::Value *RTLoc = emitUpdateLocation(CGF, Loc);
+
+    //    llvm::IRBuilder<> &Bld = OMPBuilder.Builder;
     CGBuilderTy &Bld = CGF.Builder;
     llvm::Value *NumThreadsVal = NumThreads;
     llvm::Function *WFn = WrapperFunctionsMap[OutlinedFn];
-    llvm::Value *ID = llvm::ConstantPointerNull::get(CGM.Int8PtrTy);
+    llvm::LLVMContext &LLVMContext = OMPBuilder.M.getContext();
+    llvm::PointerType *Int8PtrTy =
+        llvm::Type::getInt8Ty(LLVMContext)->getPointerTo(0);
+    llvm::Value *ID = llvm::ConstantPointerNull::get(Int8PtrTy);
     if (WFn)
-      ID = Bld.CreateBitOrPointerCast(WFn, CGM.Int8PtrTy);
-    llvm::Value *FnPtr = Bld.CreateBitOrPointerCast(OutlinedFn, CGM.Int8PtrTy);
+      ID = Bld.CreateBitOrPointerCast(WFn, Int8PtrTy);
+    llvm::Value *FnPtr = Bld.CreateBitOrPointerCast(OutlinedFn, Int8PtrTy);
 
     // Create a private scope that will globalize the arguments
     // passed from the outside of the target region.
     // TODO: Is that needed?
     CodeGenFunction::OMPPrivateScope PrivateArgScope(CGF);
-
     Address CapturedVarsAddrs = CGF.CreateDefaultAlignTempAlloca(
         llvm::ArrayType::get(CGM.VoidPtrTy, CapturedVars.size()),
         "captured_vars_addrs");
+
     // There's something to share.
     if (!CapturedVars.empty()) {
       // Prepare for parallel region. Indicate the outlined function.
-      ASTContext &Ctx = CGF.getContext();
       unsigned Idx = 0;
       for (llvm::Value *V : CapturedVars) {
-        Address Dst = Bld.CreateConstArrayGEP(CapturedVarsAddrs, Idx);
+#if 0
+    llvm::ArrayType *ElTy = cast<llvm::ArrayType>(CapturedVarsAddrs.getElementType());
+    const llvm::DataLayout &DL = OMPBuilder.M.getDataLayout();
+    CharUnits EltSize =
+        CharUnits::fromQuantity(DL.getTypeAllocSize(ElTy->getElementType()));
+
+//    Type *SizeTy = OMPBuilder.M.getDataLayout().getIntPtrType(OMPBuilder.M.getContext());
+  Address  Dst =  Address(
+        Bld.CreateInBoundsGEP(CapturedVarsAddrs.getElementType(), CapturedVarsAddrs.getPointer(),
+                          {llvm::ConstantInt::get( OMPBuilder.M.getDataLayout().getIntPtrType(OMPBuilder.M.getContext()), CharUnits::Zero().getQuantity()),llvm::ConstantInt::get( OMPBuilder.M.getDataLayout().getIntPtrType(OMPBuilder.M.getContext()), Idx)}, ""),
+        ElTy->getElementType(),
+        CapturedVarsAddrs.getAlignment().alignmentAtOffset(Idx * EltSize),
+        CapturedVarsAddrs.isKnownNonNull());
+
+#endif
+        Address Dst = CGF.Builder.CreateConstArrayGEP(CapturedVarsAddrs, Idx);
         llvm::Value *PtrV;
         if (V->getType()->isIntegerTy())
           PtrV = Bld.CreateIntToPtr(V, CGF.VoidPtrTy);
         else
           PtrV = Bld.CreatePointerBitCastOrAddrSpaceCast(V, CGF.VoidPtrTy);
-        CGF.EmitStoreOfScalar(PtrV, Dst, /*Volatile=*/false,
-                              Ctx.getPointerType(Ctx.VoidPtrTy));
+        //        llvm::errs()<<"\nCode Gen OpenMP runtime GPU\n";
+        if (auto *GV = dyn_cast<llvm::GlobalValue>(Dst.getPointer()))
+          if (GV->isThreadLocal())
+            Dst = Dst.withPointer(Bld.CreateThreadLocalAddress(GV),
+                                  NotKnownNonNull);
+
+        //  llvm::Type *SrcTy = Value->getType();
+
+        //  llvm::errs()<<"\nEmit store before\n";
+
+        llvm::StoreInst *Store = Bld.CreateAlignedStore(
+            PtrV, Dst.getPointer(), Dst.getAlignment().getAsAlign(), false);
+        //  llvm::StoreInst *Store = OMPBuilder.Builder.CreateAlignedStore(PtrV,
+        //  Dst.getPointer(), Dst.getAlignment().getAsAlign(), false);
+        //  llvm::errs()<<"\nEmit store after\n";
+        if (Tag)
+          Store->setMetadata(llvm::LLVMContext::MD_tbaa, Tag);
+        //  CGM.DecorateInstructionWithTBAA(Store,
+        //  CGM.getTBAAAccessInfo(Ctx.VoidPtrTy));
+        //      CGF.EmitStoreOfScalarAD(PtrV, Dst, /*Volatile=*/false,
+        //                          Ctx.getPointerType(Ctx.VoidPtrTy));
         ++Idx;
       }
     }
@@ -1265,7 +1307,6 @@ void CGOpenMPRuntimeGPU::emitParallelCall(CodeGenFunction &CGF,
       NumThreadsVal = Bld.CreateZExtOrTrunc(NumThreadsVal, CGF.Int32Ty),
 
       assert(IfCondVal && "Expected a value");
-    llvm::Value *RTLoc = emitUpdateLocation(CGF, Loc);
     llvm::Value *Args[] = {
         RTLoc,
         getThreadID(CGF, Loc),

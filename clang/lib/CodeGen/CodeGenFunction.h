@@ -3890,6 +3890,8 @@ public:
                          LValueBaseInfo BaseInfo, TBAAAccessInfo TBAAInfo,
                          bool isInit = false, bool isNontemporal = false);
 
+  void EmitStoreOfScalarAD(llvm::Value *Value, Address Addr, bool Volatile,
+                           QualType Ty);
   /// EmitStoreOfScalar - Store a scalar value to an address, taking
   /// care to appropriately convert from the memory representation to
   /// the LLVM value representation.  The l-value must be a simple

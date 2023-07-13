@@ -1911,6 +1911,20 @@ void CodeGenFunction::EmitStoreOfScalar(llvm::Value *Value, Address Addr,
   CGM.DecorateInstructionWithTBAA(Store, TBAAInfo);
 }
 
+void CodeGenFunction::EmitStoreOfScalarAD(llvm::Value *Value, Address Addr,
+                                          bool Volatile, QualType Ty) {
+  if (auto *GV = dyn_cast<llvm::GlobalValue>(Addr.getPointer()))
+    if (GV->isThreadLocal())
+      Addr = Addr.withPointer(Builder.CreateThreadLocalAddress(GV),
+                              NotKnownNonNull);
+
+  //  llvm::Type *SrcTy = Value->getType();
+
+  //  llvm::errs()<<"\nEmit store before\n";
+  llvm::StoreInst *Store = Builder.CreateStore(Value, Addr, Volatile);
+  //  llvm::errs()<<"\nEmit store after\n";
+  CGM.DecorateInstructionWithTBAA(Store, CGM.getTBAAAccessInfo(Ty));
+}
 void CodeGenFunction::EmitStoreOfScalar(llvm::Value *value, LValue lvalue,
                                         bool isInit) {
   if (lvalue.getType()->isConstantMatrixType()) {
