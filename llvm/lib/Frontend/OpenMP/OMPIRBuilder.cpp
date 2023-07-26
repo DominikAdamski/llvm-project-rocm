@@ -5566,12 +5566,24 @@ void OpenMPIRBuilder::createOffloadEntriesAndInfoMetadata(
             GetMDInt(EntryInfo.FileID), GetMDString(EntryInfo.ParentName),
             GetMDInt(EntryInfo.Line),   GetMDInt(EntryInfo.Count),
             GetMDInt(E.getOrder())};
+        // Check if given target metadata was already added to omp_offload.info
+        MDNode *targetMetadata = MDNode::get(C, Ops);
+        bool targetMetadataAdded = false;
+        for (unsigned i = 0; i < MD->getNumOperands(); ++i) {
+          if (MD->getOperand(i) == targetMetadata) {
+            targetMetadataAdded = true;
+            break;
+          }
+        }
 
         // Save this entry in the right position of the ordered entries array.
         OrderedEntries[E.getOrder()] = std::make_pair(&E, EntryInfo);
 
-        // Add metadata to the named metadata node.
-        MD->addOperand(MDNode::get(C, Ops));
+        // Add metadata to the named metadata node only if it wasn't added
+        // earlier
+        if (!targetMetadataAdded) {
+          MD->addOperand(targetMetadata);
+        }
       };
 
   OffloadInfoManager.actOnTargetRegionEntriesInfo(TargetRegionMetadataEmitter);
