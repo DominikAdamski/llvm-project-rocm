@@ -502,7 +502,7 @@ void OpenMPIRBuilder::initialize(StringRef HostFilePath) {
   loadOffloadInfoMetadata(*M.get());
 }
 
-void OpenMPIRBuilder::finalize(Function *Fn) {
+void OpenMPIRBuilder::finalizeFunction(Function *Fn) {
   SmallPtrSet<BasicBlock *, 32> ParallelRegionBlockSet;
   SmallVector<BasicBlock *, 32> Blocks;
   SmallVector<OutlineInfo, 16> DeferredOutlines;
@@ -589,7 +589,10 @@ void OpenMPIRBuilder::finalize(Function *Fn) {
 
   // Remove work items that have been completed.
   OutlineInfos = std::move(DeferredOutlines);
+}
 
+void OpenMPIRBuilder::finalizeModule() {
+  finalizeFunction();
   EmitMetadataErrorReportFunctionTy &&ErrorReportFn =
       [](EmitMetadataErrorKind Kind,
          const TargetRegionEntryInfo &EntryInfo) -> void {
@@ -5584,7 +5587,7 @@ void OpenMPIRBuilder::createOffloadEntriesAndInfoMetadata(
   auto &&GetMDString = [&C](StringRef V) { return MDString::get(C, V); };
 
   // Create the offloading info metadata node.
-  NamedMDNode *MD = M.getOrInsertNamedMetadata("omp_offload.info");
+  NamedMDNode *MD = M.getOrInsertNamedMetadata(ompOffloadInfoName);
   auto &&TargetRegionMetadataEmitter =
       [&C, MD, &OrderedEntries, &GetMDInt, &GetMDString](
           const TargetRegionEntryInfo &EntryInfo,
