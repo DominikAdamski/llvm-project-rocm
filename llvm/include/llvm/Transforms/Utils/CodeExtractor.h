@@ -114,6 +114,11 @@ public:
     // label, if non-empty, otherwise "extracted".
     std::string Suffix;
 
+    // Optional value of alloca address space which should be used for
+    // allocation of structure which aggregates arguments. If empty, default
+    // alloca address space for given data layout is used.
+    std::optional<unsigned> AggregateArgsAllocaAddrSpace;
+
   public:
     /// Create a code extractor for a sequence of blocks.
     ///
@@ -134,7 +139,8 @@ public:
                   AssumptionCache *AC = nullptr, bool AllowVarArgs = false,
                   bool AllowAlloca = false,
                   BasicBlock *AllocationBlock = nullptr,
-                  std::string Suffix = "");
+                  std::string Suffix = "",
+		  std::optional<unsigned> AggregateArgsAllocaAddrSpace = {});
 
     /// Create a code extractor for a loop body.
     ///

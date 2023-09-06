@@ -245,12 +245,12 @@ CodeExtractor::CodeExtractor(ArrayRef<BasicBlock *> BBs, DominatorTree *DT,
                              bool AggregateArgs, BlockFrequencyInfo *BFI,
                              BranchProbabilityInfo *BPI, AssumptionCache *AC,
                              bool AllowVarArgs, bool AllowAlloca,
-                             BasicBlock *AllocationBlock, std::string Suffix)
+                             BasicBlock *AllocationBlock, std::string Suffix, std::optional<unsigned> AggregateArgsAllocaAddrSpace)
     : DT(DT), AggregateArgs(AggregateArgs || AggregateArgsOpt), BFI(BFI),
       BPI(BPI), AC(AC), AllocationBlock(AllocationBlock),
       AllowVarArgs(AllowVarArgs),
       Blocks(buildExtractionBlockSet(BBs, DT, AllowVarArgs, AllowAlloca)),
-      Suffix(Suffix) {}
+      Suffix(Suffix), AggregateArgsAllocaAddrSpace(AggregateArgsAllocaAddrSpace) {}
 
 CodeExtractor::CodeExtractor(DominatorTree &DT, Loop &L, bool AggregateArgs,
                              BlockFrequencyInfo *BFI,
@@ -865,7 +865,7 @@ Function *CodeExtractor::constructFunction(const ValueSet &inputs,
   StructType *StructTy = nullptr;
   if (AggregateArgs && !AggParamTy.empty()) {
     StructTy = StructType::get(M->getContext(), AggParamTy);
-    ParamTy.push_back(PointerType::get(StructTy, 0/*DL.getAllocaAddrSpace()*/));
+    ParamTy.push_back(PointerType::get(StructTy, AggregateArgsAllocaAddrSpace.value_or(DL.getAllocaAddrSpace())));
   }
 
   LLVM_DEBUG({
@@ -1182,7 +1182,7 @@ CallInst *CodeExtractor::emitCallAndSwitchStatement(Function *newFunction,
     // Allocate a struct at the beginning of this function
     StructArgTy = StructType::get(newFunction->getContext(), ArgTypes);
     Struct = new AllocaInst(
-        StructArgTy, 0/*DL.getAllocaAddrSpace()*/, nullptr, "structArg",
+        StructArgTy, AggregateArgsAllocaAddrSpace.value_or(DL.getAllocaAddrSpace()), nullptr, "structArg",
         AllocationBlock ? &*AllocationBlock->getFirstInsertionPt()
                         : &codeReplacer->getParent()->front().front());
     params.push_back(Struct);

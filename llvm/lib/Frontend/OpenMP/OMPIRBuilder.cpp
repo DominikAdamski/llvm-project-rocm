@@ -523,6 +523,7 @@ void OpenMPIRBuilder::finalizeFunction(Function *Fn) {
     Function *OuterFn = OI.getFunction();
     CodeExtractorAnalysisCache CEAC(*OuterFn);
     Function *OutlinedFn = nullptr;
+    unsigned AllocaAddressSpace = Config.isTargetDevice()? 0: M.getDataLayout().getAllocaAddrSpace();
       // Use extractor which does not aggregate args
       CodeExtractor Extractor(Blocks, /* DominatorTree */ nullptr,
                               /* AggregateArgs */ true,
@@ -532,7 +533,8 @@ void OpenMPIRBuilder::finalizeFunction(Function *Fn) {
                               /* AllowVarArgs */ true,
                               /* AllowAlloca */ true,
                               /* AllocaBlock*/ OI.OuterAllocaBB,
-                              /* Suffix */ ".omp_par");
+                              /* Suffix */ ".omp_par",
+			      AllocaAddressSpace);
 
       LLVM_DEBUG(dbgs() << "Before     outlining: " << *OuterFn << "\n");
       LLVM_DEBUG(dbgs() << "Entry " << OI.EntryBB->getName()
@@ -2638,6 +2640,7 @@ OpenMPIRBuilder::applyWorkshareLoopDevice(DebugLoc DL, CanonicalLoopInfo *CLI) {
   ;
 
   CodeExtractorAnalysisCache CEAC(*OuterFn);
+  unsigned AllocaAddressSpace = Config.isTargetDevice()? 0: M.getDataLayout().getAllocaAddrSpace();
   CodeExtractor Extractor(Blocks,
                           /* DominatorTree */ nullptr,
                           /* AggregateArgs */ true,
@@ -2647,7 +2650,7 @@ OpenMPIRBuilder::applyWorkshareLoopDevice(DebugLoc DL, CanonicalLoopInfo *CLI) {
                           /* AllowVarArgs */ true,
                           /* AllowAlloca */ true,
                           /* AllocationBlock */ CLI->getPreheader(),
-                          /* Suffix */ ".omp_wsloop");
+                          /* Suffix */ ".omp_wsloop", AllocaAddressSpace);
 
   BasicBlock *CommonExit = nullptr;
   SetVector<Value *> Inputs, Outputs, SinkingCands, HoistingCands;
