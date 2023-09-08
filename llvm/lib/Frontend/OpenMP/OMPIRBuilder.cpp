@@ -2658,7 +2658,7 @@ OpenMPIRBuilder::applyWorkshareLoopDevice(DebugLoc DL, CanonicalLoopInfo *CLI) {
   // Find allocas outside the loop body region which are used inside loop
   // body
   Extractor.findAllocas(CEAC, SinkingCands, HoistingCands, CommonExit);
-
+#if 0
   // Sink allocas used only inside loop body
   // original code:
   // %item_used_in_loop_body = alloca i32
@@ -2698,6 +2698,7 @@ OpenMPIRBuilder::applyWorkshareLoopDevice(DebugLoc DL, CanonicalLoopInfo *CLI) {
       ToBeDeleted.push_back(AllocaItem);
     }
   }
+#endif
   // We need to model loop body region as the function f(cnt, loop_arg).
   // That's why we replace loop induction variable by the new counter
   // which will be one of loop body function argument
@@ -4745,6 +4746,20 @@ emitExecutionMode(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
   LLVMCompilerUsed.emplace_back(GVMode);
 }
 
+static Value *copyInput(IRBuilderBase &Builder, unsigned AddrSpace,
+		                        Value *Input, Argument &Arg) {
+	  auto Addr = Builder.CreateAlloca(Arg.getType()->isPointerTy()
+			                                         ? Arg.getType()
+								                                        : Type::getInt64Ty(Builder.getContext()),
+													                                   AddrSpace);
+	    auto AddrAscast =
+		          Builder.CreatePointerBitCastOrAddrSpaceCast(Addr, Input->getType());
+	      Builder.CreateStore(&Arg, AddrAscast);
+	        auto Copy = Builder.CreateLoad(Arg.getType(), AddrAscast);
+
+		  return Copy;
+}
+
 static Function *
 createOutlinedFunction(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
                        StringRef FuncName, SmallVectorImpl<Value *> &Inputs,
@@ -4803,8 +4818,15 @@ createOutlinedFunction(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
   for (auto InArg : zip(Inputs, Func->args())) {
     Value *Input = std::get<0>(InArg);
     Argument &Arg = std::get<1>(InArg);
+  OMPBuilder.Config.IsTargetDevice = false;
+ Value *InputCopy =
+	         OMPBuilder.Config.isTargetDevice()
+	             ? copyInput(Builder,
+			                         /*OMPBuilder.M.getDataLayout().getAllocaAddrSpace()*/0,
+			                         Input, Arg)
+	             : &Arg;
 
-    Value *InputCopy = &Arg;
+//    Value *InputCopy = &Arg;
     // Collect all the instructions
     for (User *User : make_early_inc_range(Input->users()))
       if (auto Instr = dyn_cast<Instruction>(User))
