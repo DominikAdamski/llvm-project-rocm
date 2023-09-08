@@ -4818,16 +4818,17 @@ createOutlinedFunction(OpenMPIRBuilder &OMPBuilder, IRBuilderBase &Builder,
   for (auto InArg : zip(Inputs, Func->args())) {
     Value *Input = std::get<0>(InArg);
     Argument &Arg = std::get<1>(InArg);
-  OMPBuilder.Config.IsTargetDevice = false;
- Value *InputCopy =
-	         OMPBuilder.Config.isTargetDevice()
-	             ? copyInput(Builder,
-			                         /*OMPBuilder.M.getDataLayout().getAllocaAddrSpace()*/0,
-			                         Input, Arg)
-	             : &Arg;
+
+        Value *InputCopy =
+	            OMPBuilder.Config.isTargetDevice()
+	                ? copyInput(Builder,
+			                            OMPBuilder.M.getDataLayout().getAllocaAddrSpace(),
+			                            Input, Arg)
+	                : &Arg;
 
 //    Value *InputCopy = &Arg;
     // Collect all the instructions
+assert(InputCopy->getType()->isPointerTy() && "Not Pointer Type");
     for (User *User : make_early_inc_range(Input->users()))
       if (auto Instr = dyn_cast<Instruction>(User))
         if (Instr->getFunction() == Func)
